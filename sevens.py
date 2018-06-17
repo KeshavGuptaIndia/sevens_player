@@ -202,13 +202,16 @@ if __name__ == "__main__":
     print("Enter cards in player hand in the format 7H, JD, 8S, AC, etc (Q to end):")
     hand = []
     while True:
-        inp = input()
-        if inp == "Q":
-            break
-        else:
-            card = Card(inp)
-            print(card)
-            hand.append(card)
+        try:
+            inp = input()
+            if inp == "Q":
+                break
+            else:
+                card = Card(inp)
+                print(card)
+                hand.append(card)
+        except:
+            continue
     board = Board()
     player = Player(board, hand)
     while True:
