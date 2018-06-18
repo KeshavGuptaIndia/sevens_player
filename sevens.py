@@ -184,7 +184,7 @@ class Player:
                     play_cards |= branch & hold_cards
                     hold_cards -= branch
                 if len(play_cards):
-                    card = max(play_cards, key = lambda t: t.get_distance())
+                    card = min(play_cards, key = lambda t: t.get_distance())
                     self.pri_clear_cards.remove(card)
                     return card
                 elif len(hold_cards):
