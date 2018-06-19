@@ -3,11 +3,11 @@ from time import sleep
 import numpy as np
 
 win_alpha = 1.0
-lose_alpha = -0.0
+lose_alpha = 0.0
 wins_fos = 0
 points_fos = 0
 training_trials = 200
-max_iterations = 200
+max_iterations = 10000
 
 possible_parent_child_pairs = []
 for i in range(2, 8):
@@ -42,6 +42,8 @@ try:
     while itr < max_iterations:
         hold_cards_delta = np.random.random(14)
         play_cards_delta = np.random.random(num_pairs)
+        hold_card_weights += hold_cards_delta*win_alpha
+        play_card_weights += play_cards_delta*win_alpha
         wins = 0
         points = 0
         for i in range(training_trials):
@@ -71,18 +73,13 @@ try:
                     break
         if wins > best_wins + training_trials*wins_fos and points < best_points - training_trials*points_fos:
             # success!
-            hold_card_weights += hold_cards_delta*win_alpha
-            play_card_weights += play_cards_delta*win_alpha
             best_wins = wins
             best_points = points
             result = "*************Passed, best_wins = " + str(best_wins)
-        elif wins < best_wins - training_trials*wins_fos and points > best_points + training_trials*points_fos:
-            # eh, reverse changes!
-            hold_card_weights += hold_cards_delta*lose_alpha
-            play_card_weights += play_cards_delta*lose_alpha
-            result = "Failed, wins = " + str(wins)
         else:
             # not too good or bad, try other random nudges
+            hold_card_weights -= hold_cards_delta*win_alpha
+            play_card_weights -= play_cards_delta*win_alpha
             result = "No Change, wins = " + str(wins)
         print("Completed learning iteration {0}. Result: {1}".format(str(itr), result))
         itr += 1
