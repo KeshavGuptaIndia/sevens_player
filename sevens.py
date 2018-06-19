@@ -6,7 +6,10 @@ SUITES = ["Spades", "Hearts", "Clubs", "Diamonds"]
 SUITE_TO_UNICODE = {"Spades": u'\u2660', "Hearts": u'\u2665', "Clubs": u'\u2663', "Diamonds": u'\u2666'}
 SHORTHAND_TO_SUITE = {"S": "Spades", "H": "Hearts", "C": "Clubs", "D": "Diamonds"}
 
-class InvalidCardError(ValueError):
+class InvalidCardException(ValueError):
+    pass
+
+class GameOverException(ValueError):
     pass
 
 class Card:
@@ -17,6 +20,7 @@ class Card:
         self.crd = crd
         self.suite = SHORTHAND_TO_SUITE[crd[-1]]
         self.value = crd[0:-1]
+        self.child = None
 
     def __str__(self):
         return "{0} of {1}".format(self.value, self.suite)
@@ -55,6 +59,12 @@ class Card:
     def get_distance(self):
         return abs(self.get_int() - 7)
 
+    def set_child(self, child):
+        self.child = child
+
+    def get_child(self):
+        return self.child
+
 
 class Board:
     def __init__(self):
@@ -70,20 +80,20 @@ class Board:
                 self.board["Hearts"] = [7,7]
                 self.empty = False
             else:
-                raise InvalidCardError
+                raise InvalidCardException
         else:
             if self.board[card.get_suite()] == [None, None]:
                 if card.get_int() == 7:
                     self.board[card.get_suite()] = [7, 7]
                 else:
-                    raise InvalidCardError
+                    raise InvalidCardException
             else:
                 if card.get_int() == self.board[card.get_suite()][0] - 1:
                     self.board[card.get_suite()][0] -= 1
                 elif card.get_int() == self.board[card.get_suite()][1] + 1:
                     self.board[card.get_suite()][1] += 1
                 else:
-                    raise InvalidCardError
+                    raise InvalidCardException
 
     def is_clear(self, card):
         if self.empty:
@@ -157,25 +167,41 @@ class Player:
                     changes_made = True
             self.unclear_cards -= unclear_cards_remove
 
-    def play_card(self, difficulty = 2):
+    def value(self):
+        return sum([t.get_int() for t in self.unclear_cards|self.sec_clear_cards|self.pri_clear_cards])
+
+    def play_card(self, difficulty = 2, get_weight_play_card = None, get_weight_hold_card = None):
         # difficulty modes:
         # 0: random card from cleared cards
-        # 1: some thought put into playing
-        # 2: most thought put into playing
+        # 1: play the cleared card furthest from center
+        # 2: play the card furthest from the center, but if a cleared blocks
+        #    another card on your hand, play it first
+        # 3: similar to level 2, but uses a machine-learned weightage function
+        #    (not distance from center) based on:
+        #    a. integer value of itself and the card it blocks (where it blocks
+        #       some other car don hand)
+        #    b. integer value of itself (where it does not block any other card
+        #       on hand)
         self.update_clarity()
-        if len(self.unclear_cards) == 0:
-            print(str(len(self.pri_clear_cards)+len(self.sec_clear_cards)) + " cards, all clear!")
         if len(self.pri_clear_cards) == 0:
             return None
         else:
             if difficulty == 0:
                 for card in self.pri_clear_cards:
                     self.pri_clear_cards.remove(card)
-                    return card
+                    self.board.play_card(card)
+                    if len(self.unclear_cards|self.sec_clear_cards|self.pri_clear_cards):
+                        return card
+                    else:
+                        raise GameOverException
             elif difficulty == 1:
                 card = max(self.pri_clear_cards, key = lambda t: t.get_distance())
                 self.pri_clear_cards.remove(card)
-                return card
+                self.board.play_card(card)
+                if len(self.unclear_cards|self.sec_clear_cards|self.pri_clear_cards):
+                    return card
+                else:
+                    raise GameOverException
             elif difficulty == 2:
                 hold_cards = set(list(self.pri_clear_cards)[:])
                 play_cards = set()
@@ -184,17 +210,55 @@ class Player:
                     play_cards |= branch & hold_cards
                     hold_cards -= branch
                 if len(play_cards):
-                    card = min(play_cards, key = lambda t: t.get_distance())
+                    card = max(play_cards, key = lambda t: t.get_distance())
                     self.pri_clear_cards.remove(card)
-                    return card
+                    self.board.play_card(card)
+                    if len(self.unclear_cards|self.sec_clear_cards|self.pri_clear_cards):
+                        return card
+                    else:
+                        raise GameOverException
                 elif len(hold_cards):
                     card = max(hold_cards, key = lambda t: t.get_distance())
                     self.pri_clear_cards.remove(card)
-                    return card
+                    self.board.play_card(card)
+                    if len(self.unclear_cards|self.sec_clear_cards|self.pri_clear_cards):
+                        return card
+                    else:
+                        raise GameOverException
+            elif difficulty == 3:
+                hold_cards = set(list(self.pri_clear_cards)[:])
+                play_cards = set()
+                for card in self.unclear_cards:
+                    branch = set(card.get_branch())
+                    new_play_cards = branch & hold_cards
+                    for parent in new_play_cards:
+                        parent.child = card
+                    play_cards |= new_play_cards
+                    hold_cards -= branch
+                if len(play_cards):
+                    card = max(play_cards, key = get_weight_play_card)
+                    self.pri_clear_cards.remove(card)
+                    self.board.play_card(card)
+                    if len(self.unclear_cards|self.sec_clear_cards|self.pri_clear_cards):
+                        return card
+                    else:
+                        raise GameOverException
+                elif len(hold_cards):
+                    card = max(hold_cards, key = get_weight_hold_card)
+                    self.pri_clear_cards.remove(card)
+                    self.board.play_card(card)
+                    if len(self.unclear_cards|self.sec_clear_cards|self.pri_clear_cards):
+                        return card
+                    else:
+                        raise GameOverException
 
-    def dump_hand(self):
+    def __str__(self):
         self.update_clarity()
-        return "Cards in Hand:\nPrimary Clear Cards: " + str([str(card) for card in self.pri_clear_cards]) +\
+        if len(self.unclear_cards) == 0:
+            prefix = str(len(self.pri_clear_cards)+len(self.sec_clear_cards)) + " cards, all clear!\n"
+        else:
+            prefix = ""
+        return prefix+"Cards in Hand:\nPrimary Clear Cards: " + str([str(card) for card in self.pri_clear_cards]) +\
                 "\nSecondary Clear Cards: " + str([str(card) for card in self.sec_clear_cards]) +\
                 "\nUnclear Cards: " + str([str(card) for card in self.unclear_cards])
 
@@ -218,7 +282,7 @@ if __name__ == "__main__":
         print("***********************************************")
         print(board)
         print("***********************************************")
-        print(player.dump_hand())
+        print(player)
         print("***********************************************")
         print("Enter choice:\n 1. Enter someone else's move\n 2. Play a card\n 3. Exit")
         i = int(input())
@@ -227,14 +291,13 @@ if __name__ == "__main__":
             if i == 1:
                 try:
                     board.play_card(Card(input()))
-                except InvalidCardError:
+                except InvalidCardException:
                     print("Invalid Card!")
                     input()
             elif i == 2:
                 card = player.play_card()
                 if card is not None:
                     print("I played:", card)
-                    board.play_card(card)
                 else:
                     print("I pass!")
                 input()
