@@ -71,7 +71,7 @@ try:
                 except GameOverException:
                     wins += 1
                     break
-        if wins > best_wins + training_trials*wins_fos and points < best_points - training_trials*points_fos:
+        if wins > best_wins + training_trials*wins_fos:# and points < best_points - training_trials*points_fo:
             # success!
             best_wins = wins
             best_points = points
